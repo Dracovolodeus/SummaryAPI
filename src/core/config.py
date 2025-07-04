@@ -10,6 +10,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 class RunConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
+    flask_port: int = 5000
     url: str = f"http://45.143.203.44:{port}"
 
 
