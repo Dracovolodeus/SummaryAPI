@@ -9,9 +9,9 @@ from utils.get_summary_and_tags_from_url import get_summary_and_tags_from_url
 router = APIRouter(prefix=f"{settings.api.prefix.create}")
 
 
-@router.post(f"{settings.api.prefix.url}", status_code=status.HTTP_201_CREATED)
-async def create_summary(url_object: Create):
-    summary, tags = get_summary_and_tags_from_url(url_object.url)
+@router.get(f"{settings.api.prefix.url}", status_code=status.HTTP_201_CREATED)
+async def create_summary(url: str):
+    summary, tags = get_summary_and_tags_from_url(url)
     try:
         return Read(
             summary=summary, tags=tags
