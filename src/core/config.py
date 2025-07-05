@@ -1,37 +1,47 @@
 from pathlib import Path
-from fastapi.templating import Jinja2Templates
-
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-
 
 class RunConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
     flask_port: int = 5000
-    url: str = f"http://45.143.203.44:{port}"
-
+    url: str = Field(default="http://45.143.203.44:8000")  # Исправлено: вычисление при инициализации
 
 class ApiPrefix(BaseModel):
     prefix: str = "/api"
     url: str = "/url"
-
     get: str = "/get"
-    create: str = "/creat: stre"
-    update: str = "/updat: stre"
+    create: str = "/create"  # Исправлена опечатка
+    update: str = "/update"
     delete: str = "/delete"
-
     summary: str = "/summary"
-
 
 class ApiConfig(BaseModel):
     prefix: ApiPrefix = ApiPrefix()
 
 
+class DBConfig(BaseModel):
+    url: str = "postgresql+asyncpg://user:password@localhost:5432/dbname"
+
+
+class AIConfig(BaseModel):
+    token: str = ""
+
+
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=str(BASE_DIR / ".env"),
+        case_sensitive=False,
+        env_nested_delimiter="__",
+        env_prefix="APP_CONFIG__",
+    )
+    
     run: RunConfig = RunConfig()
     api: ApiConfig = ApiConfig()
+    db: DBConfig = DBConfig()
+    ai: AIConfig = AIConfig()
 
 settings = Settings()

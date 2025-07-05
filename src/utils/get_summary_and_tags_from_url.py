@@ -2,12 +2,11 @@ import logging
 from gigachat import GigaChat
 from gigachat.models import Chat, Messages, MessagesRole
 import requests
+from core.config import settings
 from exceptions.any import NotFoundError, UnknownError
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
-
-GIGACHAT_CREDENTIALS = "MTk3ZjlhZTktY2RlOC00YjljLTgyNmItOGIwMTE3N2IxYjdhOjEzNDY0OTBmLTJiMWQtNDdmNC1hYzI4LWFjOTM4OThhODI4Mw=="
 
 
 def extract_article_text(url):
@@ -66,7 +65,7 @@ def request_for_ai(prompt: str, temperature: float, max_tokens: int, timeout: in
     logger.info("Отправка запроса к GigaChat...")
     try:
         with GigaChat(
-            credentials=GIGACHAT_CREDENTIALS,
+            credentials=settings.ai.token,
             verify_ssl_certs=False,
 #           model="GigaCha-Pro",
             timeout=timeout,
@@ -80,7 +79,7 @@ def request_for_ai(prompt: str, temperature: float, max_tokens: int, timeout: in
 
 
 def get_tags(article_text: str) -> str:
-    return request_for_ai(
+    answer = request_for_ai(
         prompt=(
             "Ты профессиональный аналитик. Проведи глубокий анализ статьи и на его основе составь теги следующим пунктам:\n"
             "Сам анализ не нужен.\n"
@@ -91,14 +90,15 @@ def get_tags(article_text: str) -> str:
             "Достаточно 3-10 КРАТКИХ тегов. Кол-во тегов зависит от объема статьи, для кратких достаточно 3-4, для длинных 8-9.\n"
             "Никакие твои комментарии не нужны. В ответе только перечисли теги.\n"
             "Примеры:\n"
-            "Nvim; Neovim; Vim; Программирование; Редактор кода; IDE\n"
-            "Go; Rust; Языки программирования; Сравнение; Скорость\n"
-            "FastAPI; API; Python; Разработка; Веб разработка\n\n"
+            "#Nvim; #Neovim; #Vim; #Программирование; #Редактор кода#; #IDE\n"
+            "#Go; #Rust; #Языки программирования#; Сравнение; #Скорость\n"
+            "#FastAPI; #API; #Python; #Разработка; #Веб разработка\n\n"
 
             f"Текст статьи:\n{article_text[:5000]}"
         ),
         temperature=0.35, max_tokens=16, timeout=20
     )
+    return ['#' + i if i[0] != '#' else i for i in answer.split("; ") if i != '#'] 
 
 
 def get_summary(article_text: str) -> str:
@@ -121,8 +121,5 @@ def get_summary(article_text: str) -> str:
 def get_summary_and_tags_from_url(url) -> tuple:
     article_text = extract_article_text(url)
     summary, tags = get_summary(article_text), get_tags(article_text)
-    tags = tags.split("; ")
-    if "#" in tags:
-        tags.remove('#')
     return summary, tuple(tags)
 
