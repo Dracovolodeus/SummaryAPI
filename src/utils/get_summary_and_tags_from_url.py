@@ -1,11 +1,13 @@
 import logging
 from functools import cache
+
+import requests
+from bs4 import BeautifulSoup
 from gigachat import GigaChat
 from gigachat.models import Chat, Messages, MessagesRole
-import requests
+
 from core.config import settings
 from exceptions.any import NotFoundError, UnknownError
-from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +44,9 @@ def extract_article_text(url):
         logger.info(f"The text of the article was successfully received")
         return text[:10000]
     except Exception as e:
-        if ((not url.startswith("https") or not url.startswith("http")) or
-            (type(e) is requests.exceptions.ConnectionError and "404" in str(e).split())):
+        if (not url.startswith("https") or not url.startswith("http")) or (
+            type(e) is requests.exceptions.ConnectionError and "404" in str(e).split()
+        ):
             raise NotFoundError
         raise UnknownError(str(e))
 
@@ -85,21 +88,25 @@ def get_tags(article_text: str) -> str:
             "Ты профессиональный аналитик. Проведи глубокий анализ статьи и на его основе составь теги следующим пунктам:\n"
             "Сам анализ не нужен.\n"
             "Нужно в минимальный объем тегов вместить максимум информации.\n"
-
-            "Каждый тег имеет в начале этот символ \"#\".\n"
-            "Теги нужно дать в виде \"<Тег1>; <Тег2>; <Тег3>\"\n"
+            'Каждый тег имеет в начале этот символ "#".\n'
+            'Теги нужно дать в виде "<Тег1>; <Тег2>; <Тег3>"\n'
             "Достаточно 3-10 КРАТКИХ тегов. Кол-во тегов зависит от объема статьи, для кратких достаточно 3-4, для длинных 8-9.\n"
             "Никакие твои комментарии не нужны. В ответе только перечисли теги.\n"
             "Примеры:\n"
             "#Nvim; #Neovim; #Vim; #Программирование; #Редактор кода#; #IDE\n"
             "#Go; #Rust; #Языки программирования#; Сравнение; #Скорость\n"
             "#FastAPI; #API; #Python; #Разработка; #Веб разработка\n\n"
-
             f"Текст статьи:\n{article_text[:5000]}"
         ),
-        temperature=0.35, max_tokens=25, timeout=20
+        temperature=0.35,
+        max_tokens=25,
+        timeout=20,
     )
-    return ['#' + i if i[0] != '#' else i for i in answer.split("; ") if i != '#' and len(i[1:]) >= 3] 
+    return [
+        "#" + i if i[0] != "#" else i
+        for i in answer.split("; ")
+        if i != "#" and len(i[1:]) >= 3
+    ]
 
 
 def get_summary(article_text: str) -> str:
@@ -113,10 +120,11 @@ def get_summary(article_text: str) -> str:
             "1. Основная, главная тема. (1 предложение).\n"
             "2. Ключевые тезисы (3-5 пунктов).\n"
             "3. Выводы (кратко, при наличии).\n\n"
-
             f"Текст статьи:\n{article_text[:5000]}"
         ),
-        temperature=0.185, max_tokens=256, timeout=120
+        temperature=0.185,
+        max_tokens=256,
+        timeout=120,
     )
 
 
@@ -125,4 +133,3 @@ def get_summary_and_tags_from_url(url) -> tuple:
     article_text = extract_article_text(url)
     summary, tags = get_summary(article_text), get_tags(article_text)
     return summary, tuple(tags)
-
