@@ -23,10 +23,6 @@ class ApiConfig(BaseModel):
     prefix: ApiPrefix = ApiPrefix()
 
 
-class DBConfig(BaseModel):
-    url: str = "postgresql+asyncpg://user:password@localhost:5432/dbname"
-
-
 class AIConfig(BaseModel):
     token: str = ""
 
@@ -41,7 +37,6 @@ class Settings(BaseSettings):
     
     run: RunConfig = RunConfig()
     api: ApiConfig = ApiConfig()
-    db: DBConfig = DBConfig()
     ai: AIConfig = AIConfig()
 
 settings = Settings()

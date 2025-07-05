@@ -1,4 +1,5 @@
 import logging
+from functools import cache
 from gigachat import GigaChat
 from gigachat.models import Chat, Messages, MessagesRole
 import requests
@@ -67,7 +68,7 @@ def request_for_ai(prompt: str, temperature: float, max_tokens: int, timeout: in
         with GigaChat(
             credentials=settings.ai.token,
             verify_ssl_certs=False,
-#           model="GigaCha-Pro",
+            model="GigaChat",
             timeout=timeout,
         ) as giga:
             response = giga.chat(chat)
@@ -96,9 +97,9 @@ def get_tags(article_text: str) -> str:
 
             f"Текст статьи:\n{article_text[:5000]}"
         ),
-        temperature=0.35, max_tokens=16, timeout=20
+        temperature=0.35, max_tokens=25, timeout=20
     )
-    return ['#' + i if i[0] != '#' else i for i in answer.split("; ") if i != '#'] 
+    return ['#' + i if i[0] != '#' else i for i in answer.split("; ") if i != '#' and len(i[1:]) >= 3] 
 
 
 def get_summary(article_text: str) -> str:
@@ -106,6 +107,7 @@ def get_summary(article_text: str) -> str:
         prompt=(
             "Ты профессиональный аналитик. Проведи глубокий анализ статьи и на его основе составь summary по следующим пунктам:\n"
             "Сам анализ не нужен.\n"
+            "Очень важно не превышать объем ответа в 144 слова, но ответ не должен обрываться на полуслове\n"
             "Нужно в минимальный объем текста вместить максимум информации.\n"
             "План для составления summary\n"
             "1. Основная, главная тема. (1 предложение).\n"
@@ -114,10 +116,11 @@ def get_summary(article_text: str) -> str:
 
             f"Текст статьи:\n{article_text[:5000]}"
         ),
-        temperature=0.185, max_tokens=192, timeout=120
+        temperature=0.185, max_tokens=256, timeout=120
     )
 
 
+@cache
 def get_summary_and_tags_from_url(url) -> tuple:
     article_text = extract_article_text(url)
     summary, tags = get_summary(article_text), get_tags(article_text)
