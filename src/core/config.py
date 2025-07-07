@@ -10,16 +10,14 @@ class RunConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
     flask_port: int = 5000
-    url: str = Field(
-        default="http://45.143.203.44:8000"
-    )  # Исправлено: вычисление при инициализации
+    url: str = Field(default="http://45.143.203.44:8000")
 
 
 class ApiPrefix(BaseModel):
     prefix: str = "/api"
     url: str = "/url"
     get: str = "/get"
-    create: str = "/create"  # Исправлена опечатка
+    create: str = "/create"
     update: str = "/update"
     delete: str = "/delete"
     summary: str = "/summary"
@@ -31,6 +29,8 @@ class ApiConfig(BaseModel):
 
 class AIConfig(BaseModel):
     token: str = ""
+    max_text_length: int = 5000
+    theads: int = 1
 
 
 class Settings(BaseSettings):

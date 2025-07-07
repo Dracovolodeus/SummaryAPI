@@ -1,64 +1,29 @@
+import asyncio
 import logging
-from functools import cache
 
-import requests
-from bs4 import BeautifulSoup
 from gigachat import GigaChat
 from gigachat.models import Chat, Messages, MessagesRole
 
 from core.config import settings
-from exceptions.any import NotFoundError, UnknownError
+from utils.case_converter import snake_case_to_pascale_case
+from utils.extract_article_text import extract_article_text
+from utils.fetch_url import fetch_url
 
 logger = logging.getLogger(__name__)
+gigachat_lock = asyncio.Lock()
 
 
-def extract_article_text(url):
-    """Извлечение текста статьи с помощью BeautifulSoup"""
-    logger.info(f"Загрузка статьи по URL: {url}")
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        response = requests.get(url, headers=headers, timeout=10, verify=False)
-        response.raise_for_status()
-
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        # Удаление ненужных элементов
-        for element in soup(
-            ["script", "style", "header", "footer", "aside", "nav", "form", "button"]
-        ):
-            element.decompose()
-
-        article = soup.find("article")
-        text = article.get_text() if article else soup.get_text()
-
-        # Очистка текста
-        lines = (line.strip() for line in text.splitlines())
-        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-        text = "\n".join(chunk for chunk in chunks if chunk)
-
-        if text.lower().startswith("ошибка") or text.lower().startswith("error"):
-            raise UnknownError("Couldn't extract the text of the article")
-
-        logger.info(f"The text of the article was successfully received")
-        return text[:10000]
-    except Exception as e:
-        if (not url.startswith("https") or not url.startswith("http")) or (
-            type(e) is requests.exceptions.ConnectionError and "404" in str(e).split()
-        ):
-            raise NotFoundError
-        raise UnknownError(str(e))
-
-
-def request_for_ai(prompt: str, temperature: float, max_tokens: int, timeout: int):
-    """Суммаризация статьи с помощью GigaChat"""
-
+async def request_for_gigachat(
+    prompt: str,
+    temperature: float,
+    max_tokens: int,
+) -> str:
+    """Асинхронная суммаризация с помощью GigaChat"""
     chat = Chat(
         messages=[
             Messages(
                 role=MessagesRole.SYSTEM,
-                content="Ты - опытный аналитик, который умеет глубоко и качественно анализировать информацию и идеально следует запросам, а также четко и структурированно излагать мысли.",
+                content="Ты - опытный аналитик, который умеет глубоко и качественно анализировать информацию и идеально следует запросам, а также четко и структурированно излагает мысли.",
             ),
             Messages(role=MessagesRole.USER, content=prompt),
         ],
@@ -66,70 +31,78 @@ def request_for_ai(prompt: str, temperature: float, max_tokens: int, timeout: in
         max_tokens=max_tokens,
     )
 
-    logger.info("Отправка запроса к GigaChat...")
-    try:
-        with GigaChat(
-            credentials=settings.ai.token,
-            verify_ssl_certs=False,
-            model="GigaChat",
-            timeout=timeout,
-        ) as giga:
-            response = giga.chat(chat)
-            logger.info("Успешно получен ответ от GigaChat")
-            return response.choices[0].message.content
-    except Exception as e:
-        logger.exception("Ошибка при запросе к GigaChat")
-        return f"Ошибка GigaChat: {str(e)}"
+    async with gigachat_lock:
+        logger.info("Отправка асинхронного запроса к GigaChat...")
+        try:
+            async with GigaChat(
+                credentials=settings.ai.token,
+                verify_ssl_certs=False,
+                model="GigaChat",
+            ) as giga:
+                response = await giga.achat(chat)
+                logger.info("Успешно получен ответ от GigaChat")
+                return response.choices[0].message.content
+        except Exception as e:
+            logger.exception("Ошибка при запросе к GigaChat")
+            return f"Ошибка GigaChat: {str(e)}"
 
 
-def get_tags(article_text: str) -> str:
-    answer = request_for_ai(
+async def get_tags(article_text: str) -> tuple[str]:
+    """Асинхронное получение тегов"""
+    answer = await request_for_gigachat(
         prompt=(
-            "Ты профессиональный аналитик. Проведи глубокий анализ статьи и на его основе составь теги следующим пунктам:\n"
-            "Сам анализ не нужен.\n"
-            "Нужно в минимальный объем тегов вместить максимум информации.\n"
-            'Каждый тег имеет в начале этот символ "#".\n'
-            'Теги нужно дать в виде "<Тег1>; <Тег2>; <Тег3>"\n'
-            "Достаточно 3-10 КРАТКИХ тегов. Кол-во тегов зависит от объема статьи, для кратких достаточно 3-4, для длинных 8-9.\n"
-            "Никакие твои комментарии не нужны. В ответе только перечисли теги.\n"
+            "Ты профессиональный аналитик. Проведи глубокий анализ статьи и на его основе составь теги:\n"
+            "- Используй только релевантные теги\n"
+            "- Каждый тег начинается с '#'\n"
+            "- Формат ответа: #Тег1; #Тег2; #Тег3\n"
+            "- 3-10 кратких тегов\n"
+            "- Без дополнительных комментариев\n\n"
             "Примеры:\n"
-            "#Nvim; #Neovim; #Vim; #Программирование; #Редактор кода#; #IDE\n"
-            "#Go; #Rust; #Языки программирования#; Сравнение; #Скорость\n"
-            "#FastAPI; #API; #Python; #Разработка; #Веб разработка\n\n"
-            f"Текст статьи:\n{article_text[:5000]}"
+            "#Nvim; #Neovim; #Vim; #Программирование\n"
+            "#Go; #Rust; #СравнениеЯзыков\n"
+            "#FastAPI; #ВебРазработка; #Python\n\n"
+            f"Текст статьи:\n{article_text}"
         ),
         temperature=0.35,
         max_tokens=25,
-        timeout=20,
     )
-    return [
-        "#" + i if i[0] != "#" else i
-        for i in answer.split("; ")
-        if i != "#" and len(i[1:]) >= 3
-    ]
+    tags = []
+    for tag in answer.split("; "):
+        tag = tag.rstrip().lstrip()
+        if " " in tag:
+            tag = tag.replace(" ", "_")
+            tag = snake_case_to_pascale_case(tag)
+
+        if not tag.startswith("#"):
+            tag = f"#{tag}"
+        if len(tag) >= 4:
+            tags.append(tag)
+    return tuple(tags)
 
 
-def get_summary(article_text: str) -> str:
-    return request_for_ai(
+async def get_summary(article_text: str) -> str:
+    """Асинхронное получение summary"""
+    return await request_for_gigachat(
         prompt=(
-            "Ты профессиональный аналитик. Проведи глубокий анализ статьи и на его основе составь summary по следующим пунктам:\n"
-            "Сам анализ не нужен.\n"
-            "Очень важно не превышать объем ответа в 144 слова, но ответ не должен обрываться на полуслове\n"
-            "Нужно в минимальный объем текста вместить максимум информации.\n"
-            "План для составления summary\n"
-            "1. Основная, главная тема. (1 предложение).\n"
-            "2. Ключевые тезисы (3-5 пунктов).\n"
-            "3. Выводы (кратко, при наличии).\n\n"
-            f"Текст статьи:\n{article_text[:5000]}"
+            "Ты профессиональный аналитик. Составь summary по статье:\n"
+            "- Объем: не более 144 слов\n"
+            "- Структура:\n"
+            "  1. Основная тема (1 предложение)\n"
+            "  2. Ключевые тезисы (3-5 пунктов)\n"
+            "  3. Выводы (при наличии)\n"
+            "- Без маркеров списка\n"
+            "- Максимально информативно\n\n"
+            f"Текст статьи:\n{article_text}"
         ),
         temperature=0.185,
         max_tokens=256,
-        timeout=120,
     )
 
 
-@cache
-def get_summary_and_tags_from_url(url) -> tuple:
-    article_text = extract_article_text(url)
-    summary, tags = get_summary(article_text), get_tags(article_text)
-    return summary, tuple(tags)
+async def get_summary_and_tags_from_url(url: str) -> tuple[str, tuple[str]]:
+    """Основная функция с кешированием результатов"""
+    article_text = await extract_article_text({"url": url, "html_text": fetch_url(url)})
+    summary, tags = await asyncio.gather(
+        get_summary(article_text), get_tags(article_text)
+    )
+    return summary, tags

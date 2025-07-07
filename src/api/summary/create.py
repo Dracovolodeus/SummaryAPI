@@ -12,7 +12,7 @@ router = APIRouter(prefix=f"{settings.api.prefix.create}")
 @router.get(f"{settings.api.prefix.url}", status_code=status.HTTP_201_CREATED)
 async def create_summary(url: str):
     try:
-        summary, tags = get_summary_and_tags_from_url(url)
+        summary, tags = await get_summary_and_tags_from_url(url)
         return Read(summary=summary, tags=tags)
     except NotFoundError:
         raise HTTPException(
